@@ -1,100 +1,38 @@
-# m개의 행과 n개의 열 -> 사막 지도
-# 가로 w, 세로 h 크기의 선인장 구역을 조성하려고 함
-# 연속된 w h 크기의 격자, 회전 분가
-
-# 비구름은 미리 정해진 순서대로 여러 칸에 비 뿌림
-# 이때 빗방울이 처음으로 선인장 구역에 포함된 칸에 떨어졌을 때
-# 그 시점이 선인장이 처음으로 비를 맞는 순간
-# 선인장이 비 늦게 맞도록 하자
-
-# 선인장이 비를 맞지 않도록 하면 최선
-# 가장 늦게 맞는게 여러 개라면, 그중 가장 위쪽 행, 왼쪽 열
-
-# 아이디어를 생각해보자
-# 일단 가장 위 왼쪽이라는 것을 보니까 for문으로 찾으면 좋을듯
-# 내 생각에는 drops에서 가능한 횟수를 찾고, for문으로 그 중에서 찾기
-
-# 아니면 어차피 개수가 적으니까
-
-from collections import deque
+import numpy as np
 
 def solution(m, n, h, w, drops):
+    R, C = m - h + 1, n - w + 1          # 선인장 좌상단 후보 격자 크기
+    d = np.asarray(drops, dtype=np.int64)
+    r, c = d[:, 0], d[:, 1]
+    # 빗방울 (r,c)가 적시는 "좌상단 후보" 직사각형 [r1..r2] x [c1..c2]
+    r1 = np.maximum(0, r - h + 1)
+    c1 = np.maximum(0, c - w + 1)
+    r2 = np.minimum(R - 1, r)
+    c2 = np.minimum(C - 1, c)
 
-    INF = m * n + 1
-    
-    grid = [[INF]*n for _ in range(m)]
-    
-    x = 1
-    for i, j in drops:
-        grid[i][j] = x
-        x += 1
-    
-    
-    result = [[] for _ in range(m)]
-    
-    # 우선 가로 슬라이딩 윈도우를 구해보자
-    for i in range(m):
-        q = deque()
-        for j in range(n):
-            if q and q[0] <= j - w:
-                q.popleft()
-            while q and grid[i][q[-1]] > grid[i][j]:
-                q.pop()
-            q.append(j)
-            if j >= w - 1:
-                result[i].append(grid[i][q[0]])
-            
-    final = [[] for _ in range(m-h+1)]
-    for i in range(n - w + 1):
-        q = deque()
-        for j in range(m):
-            if q and q[0] <= j - h:
-                q.popleft()
-            while q and result[q[-1]][i] > result[j][i]:
-                q.pop()
-            q.append(j)
-            if j >= h - 1:
-                final[j-h+1].append(result[q[0]][i])
-                
+    W = C + 1
+    size = (R + 1) * W
+    i00 = r1 * W + c1
+    i01 = r1 * W + (c2 + 1)
+    i10 = (r2 + 1) * W + c1
+    i11 = (r2 + 1) * W + (c2 + 1)
 
-    # target = [0, 0]
-    # min_result = 0
-    # q = deque()
-    # for i in range(m - h + 1):
-    #     for j in range(n - w + 1):
-    #         q.append((i, j))
-    # while q:
-    #     i, j = q.popleft()
-    #     min_drops = 500001
-    #     for x in range(h):
-    #         for y in range(w):
-    #                 if min_drops > grid[i + x][j + y]:
-    #                     min_drops = grid[i + x][j + y]
-    #     if min_result < min_drops:
-    #         min_result = min_drops
-    #         target = [i, j]
-    
-    
-    # for i in range(m - h + 1):
-    #     for j in range(n - w + 1):
-    #         sum_of_drops = 0
-    #         min_drops = 500001
-    #         for x in range(h):
-    #             for y in range(w):
-    #                 if min_drops > grid[i + x][j + y]:
-    #                     min_drops = grid[i + x][j + y]
-    #         if min_result < min_drops:
-    #             min_result = min_drops
-    #             target = [i, j]
-    max_val = -1
-    answer = [0, 0]
-    
-    for i in range(m - h + 1):
-        for j in range(n - w + 1):
-            val = final[i][j]
-            
-            if val > max_val:
-                max_val = val
-                answer = [i, j]
-    
-    return answer
+    def coverage(t):  # 앞 t개의 drop이 만드는 커버 횟수 격자 (R x C)
+        diff = (np.bincount(i00[:t], minlength=size)
+                - np.bincount(i01[:t], minlength=size)
+                - np.bincount(i10[:t], minlength=size)
+                + np.bincount(i11[:t], minlength=size)).reshape(R + 1, W)
+        return diff.cumsum(0).cumsum(1)[:R, :C]
+
+    K = len(drops)
+    lo, hi = 1, K + 1   # lo = "앞 t개가 전부 덮는" 최소 t, 없으면 K+1
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if (coverage(mid) > 0).all():
+            hi = mid
+        else:
+            lo = mid + 1
+
+    cov = coverage(lo - 1)               # 그 직전까지 안 젖은 칸들이 최적 후보
+    idx = int(np.argmin(cov.reshape(-1) > 0))  # row-major 첫 0 = 가장 위, 가장 왼쪽
+    return [idx // C, idx % C]
